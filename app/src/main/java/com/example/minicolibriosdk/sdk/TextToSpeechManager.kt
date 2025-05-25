@@ -2,93 +2,92 @@ package com.example.minicolibriosdk.sdk
 
 
 import android.content.Context
-import android.media.MediaPlayer
-import android.os.Bundle
+import android.os.Build
 import android.speech.tts.TextToSpeech
-import java.io.File
-import java.util.*
-import kotlin.concurrent.thread
 import android.speech.tts.UtteranceProgressListener
-
+import kotlinx.coroutines.*
+import java.util.*
 
 class TextToSpeechManager(private val context: Context) {
     private var tts: TextToSpeech? = null
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    private var lastSentence: String = ""
+    private var lastStartWordIndex: Int = 0
+    private var pausedWordOffsetInSentence = 0
+    private var isPaused = false
+    private var isSpeaking = false
 
     init {
         tts = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 tts?.language = Locale.US
-                tts?.setSpeechRate(0.8f) // Slower and clearer speech
+                tts?.setSpeechRate(0.8f)
             }
         }
     }
 
-    // New: Estimate real TTS audio duration
-    private fun estimateAudioDuration(text: String, onDuration: (Long) -> Unit) {
-        val file = File(context.cacheDir, "tts_sample.wav")
-        val utteranceId = UUID.randomUUID().toString()
-
-        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) {}
-
-            override fun onDone(id: String?) {
-                if (id == utteranceId) {
-                    val mediaPlayer = MediaPlayer()
-                    try {
-                        mediaPlayer.setDataSource(file.absolutePath)
-                        mediaPlayer.prepare()
-                        val duration = mediaPlayer.duration.toLong()
-                        mediaPlayer.release()
-                        onDuration(duration)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                        onDuration(2000L) // fallback estimate
-                    }
-                }
-            }
-
-            override fun onError(utteranceId: String?) {
-                onDuration(2000L) // fallback on error
-            }
-        })
-
-        val params = Bundle().apply {
-            putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
-        }
-
-        tts?.synthesizeToFile(text, params, file, utteranceId)
-    }
-
-    // Updated: uses real audio duration to sync word highlight
     fun speakSentenceWithWordHighlight(
         sentence: String,
         startWordIndex: Int,
         onHighlight: (Int) -> Unit,
         onDone: () -> Unit
     ) {
+        lastSentence = sentence
+        lastStartWordIndex = startWordIndex
+        pausedWordOffsetInSentence = 0
+        isPaused = false
+        isSpeaking = true
+
         val words = sentence.split(" ")
 
-        estimateAudioDuration(sentence) { duration ->
-            val delayPerWord = duration / words.size
-
-            tts?.speak(sentence, TextToSpeech.QUEUE_FLUSH, null, UUID.randomUUID().toString())
-
-            thread {
-                for ((i, _) in words.withIndex()) {
-                    Thread.sleep(delayPerWord)
-                    onHighlight(startWordIndex + i)
+        scope.launch {
+            for ((i, word) in words.withIndex()) {
+                if (isPaused) {
+                    pausedWordOffsetInSentence = i
+                    break
                 }
+                onHighlight(startWordIndex + i)
+                delay(400) // Estimated per-word delay
+            }
+
+            if (!isPaused) {
+                pausedWordOffsetInSentence = 0
                 onDone()
             }
         }
+
+        tts?.speak(sentence, TextToSpeech.QUEUE_FLUSH, null, UUID.randomUUID().toString())
+    }
+
+    fun pause() {
+        isPaused = true
+        isSpeaking = false
+        tts?.stop()
+    }
+
+    fun resume(onHighlight: (Int) -> Unit, onDone: () -> Unit) {
+        isPaused = false
+        isSpeaking = true
+
+        val allWords = lastSentence.split(" ")
+        val remainingWords = allWords.drop(pausedWordOffsetInSentence)
+        val resumedSentence = remainingWords.joinToString(" ")
+        val resumedStartIndex = lastStartWordIndex + pausedWordOffsetInSentence
+
+        speakSentenceWithWordHighlight(resumedSentence, resumedStartIndex, onHighlight, onDone)
     }
 
     fun isSpeaking(): Boolean {
-        return tts?.isSpeaking == true
+        return isSpeaking
     }
 
     fun shutdown() {
+        isPaused = false
+        isSpeaking = false
+        pausedWordOffsetInSentence = 0
         tts?.stop()
         tts?.shutdown()
+        scope.cancel()
     }
 }

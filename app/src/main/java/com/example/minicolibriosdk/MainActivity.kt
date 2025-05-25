@@ -24,6 +24,8 @@ class MainActivity : AppCompatActivity() {
         webView = findViewById(R.id.webView)
         val playBtn = findViewById<Button>(R.id.playButton)
         val stopBtn = findViewById<Button>(R.id.stopButton)
+        val pauseBtn = findViewById<Button>(R.id.pauseButton)
+
 
         val file = copyEpubFromAssets()
         val book = EpubParser.parseEpub(file)
@@ -38,16 +40,42 @@ class MainActivity : AppCompatActivity() {
 
         playBtn.setOnClickListener {
             if (!tts.isSpeaking()) {
+                pauseBtn.text = "Pause"
                 isStopped = false
                 currentSentenceIndex = 0
                 speakNextSentence()
             }
         }
 
+
         stopBtn.setOnClickListener {
-            isStopped = true
+            pauseBtn.text = "Play"
             tts.shutdown()
         }
+
+
+        pauseBtn.setOnClickListener {
+            if (tts.isSpeaking()) {
+                // Pause playback
+                pauseBtn.text = "Resume"
+                tts.pause()
+            } else {
+                // Resume playback
+                pauseBtn.text = "Pause"
+                tts.resume(
+                    onHighlight = { wordIndex ->
+                        runOnUiThread {
+                            webView.evaluateJavascript("highlightWord($wordIndex);", null)
+                        }
+                    },
+                    onDone = {
+                        currentSentenceIndex++
+                        speakNextSentence()
+                    }
+                )
+            }
+        }
+
     }
 
     private fun speakNextSentence() {
