@@ -1,0 +1,19 @@
+<html>
+<head>
+    <style>
+        .word { font-size: 20px; line-height: 1.6; }
+        .highlight { background-color: yellow; }
+    </style>
+    <script>
+        function highlightWord(index) {
+            const words = document.querySelectorAll('.word');
+            words.forEach((el, i) => {
+                el.className = (i === index) ? 'word highlight' : 'word';
+            });
+        }
+    </script>
+</head>
+<body>
+<div id="text-container">{{content}}</div>
+</body>
+</html>

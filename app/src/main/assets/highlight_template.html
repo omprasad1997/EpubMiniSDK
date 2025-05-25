@@ -1,0 +1,19 @@
+<html>
+<head>
+    <style>
+        .sentence { font-size: 20px; line-height: 1.5; }
+        .highlight { background-color: yellow; }
+    </style>
+    <script>
+        function highlight(index) {
+          let spans = document.querySelectorAll('.sentence');
+          spans.forEach((s, i) => {
+            s.className = (i === index) ? 'sentence highlight' : 'sentence';
+          });
+        }
+    </script>
+</head>
+<body>
+<div id="text-container"></div>
+</body>
+</html>
